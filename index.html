@@ -687,7 +687,15 @@ function migrateProfile(){
   p.mins=clamp(Math.round(p.mins),5,240);
   return ch;
 }
-(function(){const c1=migrateDays(state.days),c2=migrateProfile();if(c1||c2)save();})();
+/* v1.4: retired model names saved by old versions → clear so the
+   fresh default (gemini-flash-latest) is used */
+const RETIRED_MODELS=['gemini-2.5-flash','gemini-2.0-flash','gemini-1.5-flash','gemini-1.5-flash-8b'];
+(function(){
+  const c1=migrateDays(state.days),c2=migrateProfile();
+  const c3=state.geminiModel&&RETIRED_MODELS.includes(state.geminiModel);
+  if(c3)state.geminiModel='';
+  if(c1||c2||c3)save();
+})();
 
 function totals(d){const t={k:0,p:0,c:0,f:0};
   for(const m of['b','l','d','s'])for(const e of(d[m]||[])){const g=e.g/100;
@@ -1217,7 +1225,7 @@ function renderSettings(){
   <div class="card">
     <p class="tiny">Morsel is a private, offline-first food journal. Calories are estimated with the <b>Mifflin–St Jeor</b> equation plus your lifestyle, daily steps (≈0.5 kcal/kg per 1,000 steps) and sport sessions (MET-based). The AI scanner sends photos straight to Google's Gemini API with your own key; barcode lookups use the free Open Food Facts database.</p>
     ${storageOK?'':'<p class="tiny" style="color:var(--danger);margin-top:8px">Storage seems blocked in this browser — changes will not persist.</p>'}
-    <p class="note">Morsel v1.3 · made for one file, zero backends</p>
+    <p class="note">Morsel v1.4 · made for one file, zero backends</p>
   </div>`;
   const fi=$('#importFile');
   if(fi)fi.addEventListener('change',onImportFile);
@@ -1378,7 +1386,8 @@ async function offLookup(barcode){
   };
 }
 
-/* --- Gemini call: timeout, thinking off for 2.5-flash, schema fallback --- */
+/* --- Gemini call: 30s timeout, request ladder, 5xx retry with backoff --- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function fetchWithTimeout(url,opts,ms){
   return new Promise((res,rej)=>{
     const c=new AbortController();
@@ -1393,34 +1402,49 @@ async function geminiAttempt(m,b){
     method:'POST',
     headers:{'Content-Type':'application/json','x-goog-api-key':state.geminiKey},
     body:JSON.stringify(b)},30000);}
-  catch(e){throw Object.assign(new Error(e&&e.timeout?'timeout':'offline'),{fatal:true});}
+  catch(e){throw new Error(e&&e.timeout?'timeout':'offline');}
   if(res.ok){try{return{ok:true,data:await res.json()};}catch(e){return{ok:false,status:0,msg:''};}}
   let msg='';try{const j=await res.json();msg=(j&&j.error&&j.error.message)||'';}catch(e){}
   return{ok:false,status:res.status,msg};
 }
-async function geminiFetch(body){
+/* Request ladder: full (schema+JSON mode, thinking off) → no schema → bare prompt.
+   If the API rejects part of the request (400), the next simpler variant is tried. */
+function scanVariants(body){
+  const out=[];
+  const v1=JSON.parse(JSON.stringify(body));
+  if(v1.generationConfig)v1.generationConfig.thinkingConfig={thinkingBudget:0};
+  out.push(v1);
+  if(body.generationConfig&&body.generationConfig.responseSchema){
+    const v2=JSON.parse(JSON.stringify(v1));delete v2.generationConfig.responseSchema;out.push(v2);
+  }
+  const v3=JSON.parse(JSON.stringify(body));delete v3.generationConfig;out.push(v3);
+  return out;
+}
+async function geminiFetch(body,onStatus){
   if(!state.geminiKey)throw new Error('nokey');
   const models=state.geminiModel?[state.geminiModel,...GEMINI_MODELS.filter(x=>x!==state.geminiModel)]:GEMINI_MODELS;
-  let modelMiss=false;
+  let sawMiss=false;
   for(const m of models){
-    const b=JSON.parse(JSON.stringify(body));
-    // 2.5-flash "thinking" slows scans & can return empty text — turn it off
-    if(/2\.5-flash/.test(m)&&b.generationConfig)b.generationConfig.thinkingConfig={thinkingBudget:0};
-    let r=await geminiAttempt(m,b);
-    if(!r.ok&&r.status===400&&/api key/i.test(r.msg||''))throw new Error('badkey');
-    // some model versions reject responseSchema → retry once without it
-    if(!r.ok&&r.status===400&&b.generationConfig&&b.generationConfig.responseSchema){
-      const b2=JSON.parse(JSON.stringify(b));delete b2.generationConfig.responseSchema;
-      r=await geminiAttempt(m,b2);
-      if(!r.ok&&/api key/i.test(r.msg||''))throw new Error('badkey');
+    let gone=false;
+    for(const v of scanVariants(body)){
+      if(gone)break;
+      for(let attempt=0;attempt<3;attempt++){
+        const r=await geminiAttempt(m,v);
+        if(r.ok){if(state.geminiModel!==m){state.geminiModel=m;save();}return r.data;}
+        const s=r.status,msg=r.msg||'';
+        if(s===403||/api key/i.test(msg))throw new Error('badkey');
+        if(s===429)throw new Error('quota');
+        if(s===404){sawMiss=true;gone=true;break;}      // model name unknown
+        if(s===500||s===502||s===503||s===504){         // transient server error → backoff & retry
+          if(attempt<2){if(onStatus)onStatus(attempt?'Still busy — one more try…':'AI busy — retrying…');
+            await sleep(900*(attempt+1));continue;}
+          throw new Error('busy');
+        }
+        break;                                           // 400 etc. → simpler variant
+      }
     }
-    if(r.ok){if(state.geminiModel!==m){state.geminiModel=m;save();}return r.data;}
-    if(r.status===403||/api key/i.test(r.msg||''))throw new Error('badkey');
-    if(r.status===429)throw new Error('quota');
-    if(r.status===404)modelMiss=true;
-    // any other failure → try the next model
   }
-  throw new Error(modelMiss?'model':'api');
+  throw new Error(sawMiss?'model':'api');
 }
 const geminiText=data=>{const c=data&&data.candidates&&data.candidates[0];
   const parts=(c&&c.content&&c.content.parts)||[];return parts.map(p=>p.text||'').join('');};
@@ -1431,7 +1455,8 @@ function scanErrMsg(e){
     case 'timeout':return 'The scan took too long — try again.';
     case 'badkey':return 'Your Gemini API key was rejected. Check it in Settings.';
     case 'quota':return 'Gemini quota reached — try again later.';
-    case 'model':return 'AI service unavailable right now — try again soon.';
+    case 'busy':return 'Gemini servers are overloaded (503) — wait a few seconds and try again.';
+    case 'model':return 'That model name was not found (404) — clear the model field in Settings → AI Scanner.';
     case 'off':return 'Open Food Facts is unreachable right now.';
     default:return 'Something went wrong scanning this photo. Try again.';
   }
@@ -1440,7 +1465,7 @@ async function testGemini(){
   if(!state.geminiKey){toast('No key saved yet');return;}
   try{
     await geminiFetch({contents:[{parts:[{text:'Reply with the word OK'}]}],
-      generationConfig:{temperature:0,maxOutputTokens:16}});
+      generationConfig:{temperature:0,maxOutputTokens:64}});
     toast('Key works — Gemini is responding');
   }catch(e){toast(scanErrMsg(e));}
 }
@@ -1546,8 +1571,14 @@ async function runAIScan(imgDataUrl,my,note){
   const b64=aiImg.split(',')[1];
   const data=await geminiFetch({
     contents:[{parts:[{text:buildScanPrompt(note)},{inlineData:{mimeType:'image/jpeg',data:b64}}]}],
-    generationConfig:{temperature:.2,responseMimeType:'application/json',responseSchema:SCAN_SCHEMA}});
+    generationConfig:{temperature:.2,responseMimeType:'application/json',responseSchema:SCAN_SCHEMA}},
+    s=>setScanStatus(s));
   if(my!==scanSeq.n)return;
+  const block=data&&data.promptFeedback&&data.promptFeedback.blockReason;
+  if(block){
+    showScanFail('The photo was blocked by the AI safety filter — try a plainer shot of just the food.');
+    return;
+  }
   const items=parseScanItems(geminiText(data));
   if(!items.length){
     showScanFail("Couldn't find any food in this photo. Try getting the food in frame, in good light.");
@@ -1767,7 +1798,7 @@ function paintAISettings(){
       </label>
     </div>
     <label class="field" style="margin-top:6px"><span class="eyebrow">MODEL · ADVANCED</span>
-      <input id="aiModelIn" class="inp" placeholder="auto · gemini-2.5-flash" value="${esc(state.geminiModel||'')}" spellcheck="false"></label>
+      <input id="aiModelIn" class="inp" placeholder="auto · gemini-flash-latest" value="${esc(state.geminiModel||'')}" spellcheck="false"></label>
     <p class="note" style="margin-top:14px">Barcode lookups use the free Open Food Facts database — no key, exact label data.</p>
   </div>`;
   sheetBindDrag(curSheet);
