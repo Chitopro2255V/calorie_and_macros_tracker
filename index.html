@@ -1170,7 +1170,7 @@ function doErase(){
 /* ==================================================================
    AI SCANNER — Gemini vision + barcode (Open Food Facts)
    ================================================================== */
-const GEMINI_MODELS=['gemini-2.5-flash','gemini-2.0-flash','gemini-1.5-flash'];
+const GEMINI_MODELS=['gemini-flash-latest','gemini-2.5-flash','gemini-2.0-flash','gemini-1.5-flash'];
 const GEMINI_URL='https://generativelanguage.googleapis.com/v1beta/models/';
 const SCAN_PROMPT=`You are a nutrition expert. Analyze the photo and identify every distinct food or drink item (max 6). Ignore packaging, cutlery, hands and background objects.
 For each item provide:
