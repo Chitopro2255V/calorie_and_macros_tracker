@@ -150,6 +150,8 @@ main{flex:1;padding:14px 16px calc(126px + env(safe-area-inset-bottom))}
 .entry .info{flex:1;min-width:0}
 .ename{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .esub{font-family:'Space Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin-top:3px}
+.edesc{font-size:11.5px;color:var(--ink-soft);font-style:italic;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ekcal{font-family:Fraunces,serif;font-weight:600;font-size:16px;flex:none}
 .edel{width:32px;height:32px;border:none;background:none;color:var(--faint);
   display:grid;place-items:center;flex:none}
@@ -344,6 +346,7 @@ select.inp{appearance:none;-webkit-appearance:none;padding-right:36px;font-size:
 .sh3{font-family:Fraunces,serif;font-weight:700;font-size:21px;margin:6px 0 8px}
 .sp{font-size:14px;line-height:1.55;color:var(--ink-soft);margin-bottom:16px}
 .dcat{margin-top:2px}
+.ddesc{font-size:12.5px;line-height:1.5;color:var(--ink-soft);margin:8px 2px 0}
 .dcard{background:var(--paper);border-radius:16px;padding:12px 14px;margin-top:12px}
 .amtc{display:flex;gap:8px;margin-top:10px;align-items:stretch}
 .stp{width:44px;border-radius:12px;border:1.5px solid var(--ink);background:var(--field);
@@ -390,6 +393,10 @@ select.inp{appearance:none;-webkit-appearance:none;padding-right:36px;font-size:
 .sname{flex:1;min-width:0;border:none;border-bottom:1.5px dashed var(--line);background:none;
   font-weight:700;font-size:15px;color:var(--ink);padding:2px 0}
 .sname:focus{border-bottom-color:var(--ink);outline:none}
+.sdesc{width:100%;margin-top:8px;border:none;border-bottom:1.5px dashed var(--line);background:none;
+  font-size:12.5px;color:var(--ink);padding:3px 0;font-style:italic}
+.sdesc:focus{border-bottom-color:var(--ink);outline:none}
+.sdesc::placeholder{color:var(--ink-soft);opacity:.7}
 .srctag{font-family:'Space Mono',monospace;font-size:8.5px;font-weight:700;letter-spacing:.1em;
   color:var(--ink-soft);text-transform:uppercase;flex:none}
 .p100{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
@@ -408,6 +415,7 @@ select.inp{appearance:none;-webkit-appearance:none;padding-right:36px;font-size:
 .keyinfo{flex:1;min-width:0}
 .keyinfo b{font-size:13.5px;display:block}
 .keyinfo span{font-family:'Space Mono',monospace;font-size:10.5px;color:var(--ink-soft)}
+.notechips{display:flex;gap:7px;flex-wrap:wrap;padding:10px 0 0}
 
 /* ============ toast ============ */
 #toasts{position:fixed;left:0;right:0;bottom:calc(88px + env(safe-area-inset-bottom));
@@ -448,6 +456,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const fmt=n=>Math.round(n).toLocaleString('en-US');
 const f1=v=>{const r=Math.round(v*10)/10;return r%1===0?String(Math.round(r)):r.toFixed(1);};
+const trunc=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
 const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms);}catch(e){}};
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -798,6 +807,7 @@ function entryRow(k,m,e,i){
   const kcal=Math.round(e.per100.k*e.g/100);
   return`<div class="entry" data-act="entry-edit" data-k="${k}" data-m="${m}" data-i="${i}">
     <div class="info"><div class="ename">${esc(e.n)}</div>
+    ${e.d?`<div class="edesc">${esc(e.d)}</div>`:''}
     <div class="esub">${f1(e.g)} g · <span class="mp">P</span>${f1(e.per100.p*e.g/100)} <span class="mc">C</span>${f1(cOf(e.per100)*e.g/100)} <span class="mf">F</span>${f1(e.per100.f*e.g/100)}</div></div>
     <span class="ekcal">${fmt(kcal)}</span>
     <button class="edel" data-act="entry-del" data-k="${k}" data-m="${m}" data-i="${i}" aria-label="Remove">${ic('trash',17)}</button>
@@ -1018,10 +1028,11 @@ function renderPlan(){
    ================================================================== */
 function foodSearchItems(q,cat){
   q=q.trim().toLowerCase();
-  if(cat==='My foods')return state.customs.filter(f=>!q||f.n.toLowerCase().includes(q));
+  if(cat==='My foods')return state.customs.filter(f=>!q||f.n.toLowerCase().includes(q)||
+    (f.d||'').toLowerCase().includes(q));
   const pool=DB.concat(state.customs);
   const res=pool.filter(f=>(cat==='All'||f.cat===cat)&&
-    (!q||f.n.toLowerCase().includes(q)||f.cat.toLowerCase().includes(q)));
+    (!q||f.n.toLowerCase().includes(q)||f.cat.toLowerCase().includes(q)||(f.d||'').toLowerCase().includes(q)));
   if(q)res.sort((a,b)=>{
     const sa=a.n.toLowerCase().startsWith(q)?0:1,sb=b.n.toLowerCase().startsWith(q)?0:1;
     return sa-sb||a.n.localeCompare(b.n);});
@@ -1031,7 +1042,7 @@ function foodRowFoods(f){
   return`<div class="frowwrap">
     <button class="frow" data-act="food-add" data-id="${esc(f.id)}">
       <span class="info"><span class="fname">${esc(f.n)}</span>
-      <span class="fmeta">${f.k} kcal / 100 g${f.sg?` · ${esc(f.s)} ≈ ${Math.round(f.k*f.sg/100)} kcal`:''}${f.custom?' · custom':''}</span></span>
+      <span class="fmeta">${f.k} kcal / 100 g${f.sg?` · ${esc(f.s)} ≈ ${Math.round(f.k*f.sg/100)} kcal`:''}${f.d?` · ${esc(trunc(f.d,42))}`:''}${f.custom?' · custom':''}</span></span>
       ${ic('chevR',15)}</button>
     ${f.custom?`<button class="fmini" data-act="custom-edit" data-id="${esc(f.id)}" aria-label="Edit">${ic('pencil',15)}</button>
     <button class="fmini" data-act="custom-del" data-id="${esc(f.id)}" aria-label="Delete">${ic('trash',15)}</button>`:''}
@@ -1127,7 +1138,7 @@ function renderSettings(){
   <div class="card">
     <p class="tiny">Morsel is a private, offline-first food journal. Calories are estimated with the <b>Mifflin–St Jeor</b> equation — the most accurate general BMR formula for healthy adults — scaled by your activity level and goal. The AI scanner sends photos straight to Google's Gemini API with your own key; barcode lookups use the free Open Food Facts database.</p>
     ${storageOK?'':'<p class="tiny" style="color:var(--danger);margin-top:8px">Storage seems blocked in this browser — changes will not persist.</p>'}
-    <p class="note">Morsel v1.1 · made for one file, zero backends</p>
+    <p class="note">Morsel v1.2 · made for one file, zero backends</p>
   </div>`;
   const fi=$('#importFile');
   if(fi)fi.addEventListener('change',onImportFile);
@@ -1193,6 +1204,10 @@ const SCAN_SCHEMA={
     },
     required:['name','grams','kcal_per_100g','protein_per_100g','carbs_per_100g','fat_per_100g','confidence']}
 };
+function buildScanPrompt(note){
+  if(!note)return SCAN_PROMPT;
+  return SCAN_PROMPT+`\n\nThe user adds context that may not be visible in the photo: "${note}". Trust this over visual assumptions and use it when identifying items and estimating portion size, preparation methods (fried, grilled, oils, sauces) and nutrition values.`;
+}
 
 /* --- image helpers --- */
 function scaledDataURL(src,maxSide,quality){
@@ -1370,19 +1385,55 @@ async function handleScanFile(file){
         {label:'Scan as photo',fn:()=>scanAsAI()});
       return;
     }
-    await runAIScan(barImg,my);
+    if(!state.geminiKey){
+      showScanFail('To analyze food photos, add your free Gemini API key.',
+        {label:'Open settings',fn:()=>{closeSheet();setTab('settings');openAISettings();}});
+      return;
+    }
+    openDescribeSheet(barImg,my);
   }catch(err){
     if(my!==scanSeq.n)return;
     showScanFail(scanErrMsg(err));
   }
 }
 function scanAsAI(){
-  const my=++scanSeq.n;
   if(!lastScanImg){closeSheet();return;}
-  openScanWorking(lastScanImg);
-  runAIScan(lastScanImg,my).catch(err=>{if(my===scanSeq.n)showScanFail(scanErrMsg(err));});
+  const my=++scanSeq.n;
+  openDescribeSheet(lastScanImg,my);
 }
-async function runAIScan(imgDataUrl,my){
+/* --- optional note step: context the photo can't show --- */
+function openDescribeSheet(imgSrc,my){
+  openSheet(`<div class="handle-area"><div class="sheet-handle"></div></div>
+  <div class="sm-body">
+    ${imgSrc?`<img class="scan-thumb" src="${imgSrc}" alt="Photo to analyze">`:''}
+    <h3 class="sh3">Anything the photo can't show?</h3>
+    <p class="sp" style="margin-bottom:12px">Optional — tell the AI about cooking methods, added oils, sauces, brands or swaps. It uses your note to sharpen the estimate.</p>
+    <input id="scanNote" class="inp" placeholder="e.g. fried in butter, sugar-free, homemade" maxlength="140" autocomplete="off">
+    <div class="notechips">
+      ${['fried','grilled','baked','with olive oil','with butter','large portion'].map(t=>
+        `<button class="chip notechip" data-t="${esc(t)}">${t}</button>`).join('')}
+    </div>
+    <button class="btn primary" id="noteGo" style="margin-top:14px;height:46px">Analyze photo</button>
+    <p class="hint" style="text-align:center;margin-top:10px">Skip the note if the photo says it all.</p>
+  </div>`,'sm');
+  const inp=$('#scanNote');
+  const go=()=>{
+    const note=(inp&&inp.value?inp.value:'').trim().slice(0,200);
+    openScanWorking(imgSrc);
+    runAIScan(imgSrc,my,note).catch(err=>{if(my===scanSeq.n)showScanFail(scanErrMsg(err));});
+  };
+  const gb=$('#noteGo');if(gb)gb.addEventListener('click',go);
+  if(inp){
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+    document.querySelectorAll('.notechip').forEach(ch=>ch.addEventListener('click',()=>{
+      const v=(inp.value||'').trim();
+      const t=ch.dataset.t;
+      if(!v.toLowerCase().split(',').map(s=>s.trim()).includes(t.toLowerCase()))
+        inp.value=v?v+', '+t:t;
+    }));
+  }
+}
+async function runAIScan(imgDataUrl,my,note){
   if(!state.geminiKey){
     showScanFail('To analyze food photos, add your free Gemini API key.',
       {label:'Open settings',fn:()=>{closeSheet();setTab('settings');openAISettings();}});
@@ -1392,7 +1443,7 @@ async function runAIScan(imgDataUrl,my){
   const aiImg=await scaledDataURL(imgDataUrl,800,.85);
   const b64=aiImg.split(',')[1];
   const data=await geminiFetch({
-    contents:[{parts:[{text:SCAN_PROMPT},{inlineData:{mimeType:'image/jpeg',data:b64}}]}],
+    contents:[{parts:[{text:buildScanPrompt(note)},{inlineData:{mimeType:'image/jpeg',data:b64}}]}],
     generationConfig:{temperature:.2,responseMimeType:'application/json',responseSchema:SCAN_SCHEMA}});
   if(my!==scanSeq.n)return;
   const items=parseScanItems(geminiText(data));
@@ -1400,7 +1451,8 @@ async function runAIScan(imgDataUrl,my){
     showScanFail("Couldn't find any food in this photo. Try getting the food in frame, in good light.");
     return;
   }
-  showScanReview('ai',items);
+  if(note&&items.length===1)items[0].d=note; // single item: note is clearly about it
+  showScanReview('ai',items,note);
 }
 function parseScanItems(text){
   let arr;
@@ -1448,6 +1500,7 @@ function scanCardHTML(it,i){
       ${it.conf&&scanCtx.source==='ai'?`<span class="srctag">${esc(it.conf)}</span>`:''}
       <button class="fmini" data-act="scan-item-del" data-i="${i}" aria-label="Remove item">${ic('x',15)}</button>
     </div>
+    <input class="sdesc" data-i="${i}" value="${esc(it.d||'')}" placeholder="Describe it — e.g. fried in butter, no sugar" maxlength="140">
     ${it.serving?`<div class="schips">
       <button class="chip" data-act="scan-serving" data-i="${i}" data-g="${it.serving.grams}">${esc(it.serving.label)}</button>
       <button class="chip" data-act="scan-serving" data-i="${i}" data-g="100">100 g</button></div>`:''}
@@ -1474,6 +1527,7 @@ function reviewHTML(){
   <div class="sm-body">
     <div class="shead" style="padding-top:2px"><h3>Scan results</h3><span class="srctag">${src}</span>
       <button class="xbtn" data-act="sheet-close" aria-label="Close">${ic('x',18)}</button></div>
+    ${scanCtx.note&&scanCtx.items.length>1?`<p class="ddesc" style="margin:0 0 4px">Your note: ${esc(scanCtx.note)}</p>`:''}
     <div id="scanItems">${scanCtx.items.map(scanCardHTML).join('')}</div>
     <div class="field" style="margin-top:6px"><span class="eyebrow">MEAL</span>
       <div class="seg" id="scanMealSeg">${MEALS.map(m=>
@@ -1484,6 +1538,8 @@ function reviewHTML(){
 function bindScanInputs(){
   document.querySelectorAll('.sname').forEach(inp=>{
     inp.addEventListener('input',()=>{const it=scanCtx&&scanCtx.items[+inp.dataset.i];if(it)it.name=inp.value;});});
+  document.querySelectorAll('.sdesc').forEach(inp=>{
+    inp.addEventListener('input',()=>{const it=scanCtx&&scanCtx.items[+inp.dataset.i];if(it)it.d=inp.value;});});
   document.querySelectorAll('.scan-g').forEach(inp=>{
     inp.addEventListener('input',()=>{const it=scanCtx&&scanCtx.items[+inp.dataset.i];if(!it)return;
       const v=parseFloat(inp.value);if(!isNaN(v)&&v>0)it.grams=clamp(v,1,5000);paintScanLive();});});
@@ -1511,8 +1567,8 @@ function paintScanLive(){
   if(btn){btn.textContent=n?`Add ${n} item${n>1?'s':''} · ${fmt(tot)} kcal`:'Nothing to add';
     btn.disabled=!n;btn.style.opacity=n?1:.4;}
 }
-function showScanReview(source,items){
-  scanCtx={meal:defaultMeal(),source,
+function showScanReview(source,items,note){
+  scanCtx={meal:defaultMeal(),source,note:note||'',
     items:items.map(it=>({...it,save:state.scanSaveFoods!==false}))};
   if(!curSheet)openSheet('','sm');
   if(!curSheet)return;
@@ -1531,17 +1587,22 @@ function commitScan(){
     const name=(it.name||'').trim()||'Food';
     const per100={k:+it.k100||0,p:+it.p100||0,cb:+it.c100||0,f:+it.f100||0};
     const g=clamp(+it.grams||100,1,5000);
+    const dsc=(it.d||'').trim();
     let fid=null;
     if(it.save){
       const ex=state.customs.find(f=>f.n.toLowerCase()===name.toLowerCase());
-      if(ex)fid=ex.id;
+      if(ex){fid=ex.id;if(dsc)ex.d=dsc;}
       else{
         fid='c'+t.toString(36)+idx;
-        state.customs.unshift({id:fid,n:name,cat:'My foods',k:per100.k,p:per100.p,cb:per100.cb,f:per100.f,
-          s:(it.serving&&it.serving.grams>0)?it.serving.label:'',sg:(it.serving&&it.serving.grams>0)?it.serving.grams:0,custom:true});
+        const food={id:fid,n:name,cat:'My foods',k:per100.k,p:per100.p,cb:per100.cb,f:per100.f,
+          s:(it.serving&&it.serving.grams>0)?it.serving.label:'',sg:(it.serving&&it.serving.grams>0)?it.serving.grams:0,custom:true};
+        if(dsc)food.d=dsc;
+        state.customs.unshift(food);
       }
     }
-    d[scanCtx.meal].push({fid,n:name,g,per100});
+    const entry={fid,n:name,g,per100};
+    if(dsc)entry.d=dsc;
+    d[scanCtx.meal].push(entry);
     if(fid)state.recents=[fid,...state.recents.filter(r=>r!==fid)].slice(0,14);
     tot+=per100.k*g/100;added++;
   });
@@ -1565,7 +1626,7 @@ function paintAISettings(){
   <div class="sm-body">
     <div class="shead" style="padding-top:2px"><h3>AI food scanner</h3>
       <button class="xbtn" data-act="sheet-close" aria-label="Close">${ic('x',18)}</button></div>
-    <p class="sp">Snap a photo of your meal — or a product barcode — and Morsel fills in the name, calories and macros for you to confirm. Photos go straight from this device to Google's Gemini API; your key never leaves this phone.</p>
+    <p class="sp">Snap a photo of your meal — or a product barcode — and Morsel fills in the name, calories and macros for you to confirm. You can add a note about anything the photo can't show (cooking method, oils, sauces) and the AI will use it. Photos go straight from this device to Google's Gemini API; your key never leaves this phone.</p>
     ${hasKey&&!showForm?`
     <div class="keybox">
       <span class="keydot"></span>
@@ -1651,7 +1712,7 @@ function buildAddChips(){
 function foodRowSheet(f){
   return`<button class="frowwrap" style="border:none;background:none;border-top:1px solid var(--line);width:100%;text-align:left" data-act="food-detail" data-id="${esc(f.id)}">
     <span class="info" style="flex:1;min-width:0"><span class="fname">${esc(f.n)}</span>
-    <span class="fmeta">${f.k} kcal / 100 g${f.sg?` · ${esc(f.s)} ≈ ${Math.round(f.k*f.sg/100)} kcal`:''}${f.custom?' · custom':''}</span></span>
+    <span class="fmeta">${f.k} kcal / 100 g${f.sg?` · ${esc(f.s)} ≈ ${Math.round(f.k*f.sg/100)} kcal`:''}${f.d?` · ${esc(trunc(f.d,42))}`:''}${f.custom?' · custom':''}</span></span>
     ${ic('chevR',15)}</button>`;
 }
 function renderAddList(){
@@ -1678,6 +1739,7 @@ function renderDetail(){
   $('#dTitle').textContent=f.n;
   $('#dBody').innerHTML=`
   <div class="dcat eyebrow">${esc(f.cat)} · ${f.k} KCAL / 100 G</div>
+  ${f.d?`<p class="ddesc">${esc(f.d)}</p>`:''}
   <div class="dcard"><span class="eyebrow">AMOUNT</span>
     <div class="amtc">
       <button class="stp" data-act="amt-minus" aria-label="Less">${ic('minus',16)}</button>
@@ -1732,7 +1794,9 @@ function stepAmt(d){
 function commitAdd(){
   const f=addCtx.food,g=addCtx.grams;
   const k=Math.round(f.k*g/100);
-  day(sel)[addCtx.meal].push({fid:f.id,n:f.n,g,per100:{k:f.k,p:f.p,cb:f.cb,f:f.f}});
+  const entry={fid:f.id,n:f.n,g,per100:{k:f.k,p:f.p,cb:f.cb,f:f.f}};
+  if(f.d)entry.d=f.d;
+  day(sel)[addCtx.meal].push(entry);
   state.recents=[f.id,...state.recents.filter(x=>x!==f.id)].slice(0,14);
   save();closeSheet();buzz(14);
   toast(`Added ${esc(f.n)} · ${fmt(k)} kcal`);
@@ -1741,10 +1805,12 @@ function commitAdd(){
 function renderCustomForm(editFood){
   const t=$('#cfTitle'),b=$('#cfBody');if(!t||!b)return;
   t.textContent=editFood?'Edit food':'New custom food';
-  const v=editFood||{n:'',k:'',p:'',cb:'',f:'',s:'',sg:''};
+  const v=editFood||{n:'',k:'',p:'',cb:'',f:'',s:'',sg:'',d:''};
   b.innerHTML=`
   <div class="field" style="margin-bottom:12px"><span class="eyebrow">NAME</span>
     <input id="cfName" class="inp" placeholder="e.g. Grandma's lasagna" value="${esc(v.n)}" maxlength="48"></div>
+  <div class="field" style="margin-bottom:12px"><span class="eyebrow">DESCRIPTION · OPTIONAL</span>
+    <input id="cfD" class="inp" placeholder="e.g. fried in butter, homemade, no sugar" value="${esc(v.d||'')}" maxlength="140"></div>
   <div class="fields">
     <label class="field"><span class="eyebrow">KCAL / 100 G</span><input id="cfK" class="inp" type="number" inputmode="decimal" placeholder="0" value="${v.k}"></label>
     <label class="field"><span class="eyebrow">PROTEIN G</span><input id="cfP" class="inp" type="number" inputmode="decimal" placeholder="0" value="${v.p}"></label>
@@ -1764,14 +1830,17 @@ function customSave(){
   if(isNaN(k)||k<0){toast('Enter calories per 100 g');return;}
   const num=(id)=>{const n=parseFloat($(id).value);return isNaN(n)||n<0?0:n;};
   const s=$('#cfS').value.trim(),sg=parseFloat($('#cfSg').value);
+  const dsc=$('#cfD').value.trim();
   const hasS=s&&sg>0;
   let food;
   if(addCtx&&addCtx.editFood){
     food=addCtx.editFood;
     Object.assign(food,{n:name,k,p:num('#cfP'),cb:num('#cfC'),f:num('#cfF'),s:hasS?s:'',sg:hasS?sg:0});
+    if(dsc)food.d=dsc;else delete food.d;
   }else{
     food={id:'c'+Date.now().toString(36),n:name,cat:'My foods',k,
       p:num('#cfP'),cb:num('#cfC'),f:num('#cfF'),s:hasS?s:'',sg:hasS?sg:0,custom:true};
+    if(dsc)food.d=dsc;
     state.customs.unshift(food);
   }
   save();buzz(10);toast(`Saved ${esc(name)}`);
@@ -1798,6 +1867,8 @@ function openEditSheet(k,m,i){
         <button class="stp" data-act="e-plus" aria-label="More">${ic('plus',16)}</button>
         <button class="unitc" data-act="e-unit"></button>
       </div></div>
+    <label class="field" style="margin-top:12px"><span class="eyebrow">DESCRIPTION</span>
+      <input id="eDesc" class="inp" value="${esc(e.d||'')}" maxlength="140" placeholder="Optional note — e.g. what the photo couldn't show"></label>
     <div class="elive" id="eLive"></div>
     <div class="field" style="margin-top:12px"><span class="eyebrow">MEAL</span>
       <div class="seg" id="eSeg">${MEALS.map(mm=>
@@ -1826,6 +1897,8 @@ function paintEdit(setInput=true){
 function saveEditEntry(){
   const d=state.days[editCtx.k];const e=d&&d[editCtx.m]&&d[editCtx.m][editCtx.i];if(!e)return;
   e.g=editCtx.grams;
+  const di=$('#eDesc');
+  if(di){const nd=di.value.trim();if(nd)e.d=nd;else delete e.d;}
   if(editCtx.meal!==editCtx.m){
     const[mv]=d[editCtx.m].splice(editCtx.i,1);
     day(editCtx.k)[editCtx.meal].push(mv);
